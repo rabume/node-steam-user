@@ -228,14 +228,6 @@ class SteamUserCDN extends SteamUserApps {
 			let urlBase = (server.https_support == 'mandatory' ? 'https://' : 'http://') + server.Host;
 			let vhost = server.vhost || server.Host;
 
-			let token = '';
-			if (server.usetokenauth == 1) {
-				// Only request a CDN auth token if this server wants one.
-				// I'm not sure that any servers use token auth anymore, but in case there's one out there that does,
-				// we should still try.
-				token = (await this.getCDNAuthToken(appID, depotID, vhost)).token;
-			}
-
 			if (!branchName) {
 				this._warn(`No branch name was specified for app ${appID}, depot ${depotID}. Assuming "public".`);
 				branchName = 'public';
@@ -244,7 +236,7 @@ class SteamUserCDN extends SteamUserApps {
 			let {requestCode} = await this.getManifestRequestCode(appID, depotID, manifestID, branchName, branchPassword);
 			let manifestRequestCode = `/${requestCode}`;
 
-			let manifestUrl = `${urlBase}/depot/${depotID}/manifest/${manifestID}/5${manifestRequestCode}${token}`;
+			let manifestUrl = `${urlBase}/depot/${depotID}/manifest/${manifestID}/5${manifestRequestCode}`;
 			this.emit('debug', `Downloading manifest from ${manifestUrl} (${vhost})`);
 			download(manifestUrl, vhost, async (err, res) => {
 				if (err) {
@@ -325,12 +317,8 @@ class SteamUserCDN extends SteamUserApps {
 			let vhost = contentServer.vhost || contentServer.Host;
 			let {key} = await this.getDepotDecryptionKey(appID, depotID);
 
-			let token = '';
-			if (contentServer.usetokenauth == 1) {
-				token = (await this.getCDNAuthToken(appID, depotID, vhost)).token;
-			}
 
-			download(`${urlBase}/depot/${depotID}/chunk/${chunkSha1}${token}`, vhost, async (err, res) => {
+			download(`${urlBase}/depot/${depotID}/chunk/${chunkSha1}`, vhost, async (err, res) => {
 				if (err) {
 					return reject(err);
 				}
