@@ -1,5 +1,5 @@
-const AppDirectory = require('appdirectory');
 const FileManager = require('file-manager');
+const StdLib = require('@doctormckay/stdlib');
 
 const SteamChatRoomClient = require('./components/chatroom.js');
 
@@ -57,8 +57,6 @@ class SteamUser extends SteamUserTwoFactor {
 			packages: {}
 		};
 
-		this._sentry = null;
-
 		this.options = {};
 
 		for (let i in (options || {})) {
@@ -77,10 +75,10 @@ class SteamUser extends SteamUserTwoFactor {
 			if (process.env.OPENSHIFT_DATA_DIR) {
 				this.options.dataDirectory = process.env.OPENSHIFT_DATA_DIR + '/node-steamuser';
 			} else {
-				this.options.dataDirectory = (new AppDirectory({
+				this.options.dataDirectory = StdLib.OS.appDataDirectory({
 					appName: 'node-steamuser',
 					appAuthor: 'doctormckay'
-				})).userData();
+				});
 			}
 		}
 
@@ -127,12 +125,21 @@ class SteamUser extends SteamUserTwoFactor {
 		this._sessionID = 0;
 		this._currentJobID = 0;
 		this._currentGCJobID = 0;
-		this._jobs = {};
-		this._jobsGC = {};
-		this._jobCleanupTimers = [];
+		this._jobs = new StdLib.DataStructures.TTLCache(1000 * 60 * 2); // job callbacks are cleaned up after 2 minutes
+		this._jobsGC = new StdLib.DataStructures.TTLCache(1000 * 60 * 2);
 		this._richPresenceLocalization = {};
 		this._incomingMessageQueue = [];
 		this._useMessageQueue = false; // we only use the message queue while we're processing a multi message
+		this._ttlCache = new StdLib.DataStructures.TTLCache(1000 * 60 * 5); // default 5 minutes
+		this._getCmListAttempts = 0;
+
+		delete this._machineAuthToken;
+		delete this._shouldAttemptRefreshTokenRenewal;
+		delete this._loginSession;
+		delete this._connectionClosed;
+
+		clearTimeout(this._reconnectForCloseDuringAuthTimeout);
+		delete this._reconnectForCloseDuringAuthTimeout;
 	}
 
 	get packageName() {

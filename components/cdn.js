@@ -113,19 +113,19 @@ class SteamUserCDN extends SteamUserApps {
 			let filename = `depot_key_${appID}_${depotID}.bin`;
 			let file = await this._readFile(filename);
 			if (file && file.length > 4 && Math.floor(Date.now() / 1000) - file.readUInt32LE(0) < (60 * 60 * 24 * 14)) {
-				return resolve({"key": file.slice(4)});
+				return resolve({key: file.slice(4)});
 			}
 
 			this._send(EMsg.ClientGetDepotDecryptionKey, {
-				"depot_id": depotID,
-				"app_id": appID
+				depot_id: depotID,
+				app_id: appID
 			}, async (body) => {
 				if (body.eresult != EResult.OK) {
 					return reject(Helpers.eresultError(body.eresult));
 				}
 
 				if (body.depot_id != depotID) {
-					return reject(new Error("Did not receive decryption key for correct depot"));
+					return reject(new Error('Did not receive decryption key for correct depot'));
 				}
 
 				let key = body.depot_encryption_key;
@@ -180,6 +180,15 @@ class SteamUserCDN extends SteamUserApps {
 	 * @return Promise
 	 */
 	getManifest(appID, depotID, manifestID, branchName, branchPassword, callback) {
+		if (typeof manifestID == 'object' && typeof manifestID.gid == 'string') {
+			// At some point, Valve changed the format of appinfo.
+			// Previously, appinfo.depots[depotId].manifests.public would get you the public manifest ID.
+			// Now, you need to access it with appinfo.depots[depotId].manifests.public.gid.
+			// Here's a shim to keep consumers working properly if they expect the old format.
+			manifestID = manifestID.gid;
+			this._warn(`appinfo format has changed: you now need to use appinfo.depots[${depotID}].manifests.${branchName || 'public'}.gid to access the manifest ID. steam-user is fixing up your input, but you should update your code to retrieve the manifest ID from its new location in the appinfo structure.`);
+		}
+
 		if (typeof branchName == 'function') {
 			callback = branchName;
 			branchName = null;
@@ -405,6 +414,7 @@ class SteamUserCDN extends SteamUserApps {
 			let queue = new StdLib.DataStructures.AsyncQueue(function dlChunk(chunk, cb) {
 				let serverIdx;
 
+				// eslint-disable-next-line
 				while (true) {
 					// Find the next available download slot
 					if (serversInUse[currentServerIdx]) {
@@ -558,7 +568,7 @@ function download(url, hostHeader, destinationFilename, callback) {
 	}
 
 	let options = require('url').parse(url);
-	options.method = "GET";
+	options.method = 'GET';
 	options.headers = {
 		Host: hostHeader,
 		Accept: 'text/html,*/*;q=0.9',
@@ -570,7 +580,7 @@ function download(url, hostHeader, destinationFilename, callback) {
 	let module = options.protocol.replace(':', '');
 	let req = require(module).request(options, (res) => {
 		if (res.statusCode != 200) {
-			callback(new Error("HTTP error " + res.statusCode));
+			callback(new Error('HTTP error ' + res.statusCode));
 			return;
 		}
 
@@ -602,11 +612,11 @@ function download(url, hostHeader, destinationFilename, callback) {
 				dataBuffer = Buffer.concat([dataBuffer, chunk]);
 			}
 
-			callback(null, {"type": "progress", "receivedBytes": receivedBytes, "totalSizeBytes": totalSizeBytes});
+			callback(null, {type: 'progress', receivedBytes: receivedBytes, totalSizeBytes: totalSizeBytes});
 		});
 
 		stream.on('end', () => {
-			callback(null, {"type": "complete", "data": dataBuffer});
+			callback(null, {type: 'complete', data: dataBuffer});
 		});
 	});
 
@@ -630,7 +640,7 @@ function unzip(data) {
 
 			data.skip(2); // header
 			if (String.fromCharCode(data.readByte()) != 'a') {
-				return reject(new Error("Expected VZip version 'a'"));
+				return reject(new Error('Expected VZip version \'a\''));
 			}
 
 			data.skip(4); // either a timestamp or a CRC; either way, forget it
@@ -643,7 +653,7 @@ function unzip(data) {
 			let decompressedCrc = data.readUint32();
 			let decompressedSize = data.readUint32();
 			if (data.readUint16() != VZIP_FOOTER) {
-				return reject(new Error("Didn't see expected VZip footer"));
+				return reject(new Error('Didn\'t see expected VZip footer'));
 			}
 
 			let uncompressedSizeBuffer = Buffer.alloc(8);
@@ -659,11 +669,11 @@ function unzip(data) {
 
 				// Verify the result
 				if (decompressedSize != result.length) {
-					return reject(new Error("Decompressed size was not valid"));
+					return reject(new Error('Decompressed size was not valid'));
 				}
 
 				if (StdLib.Hashing.crc32(result) != decompressedCrc) {
-					return reject(new Error("CRC check failed on decompressed data"));
+					return reject(new Error('CRC check failed on decompressed data'));
 				}
 
 				return resolve(result);

@@ -1,48 +1,61 @@
 const HTTP = require('http');
 const Socket = require('net').Socket;
 const SteamCrypto = require('@doctormckay/steam-crypto');
-const URL = require('url');
+const {URL} = require('url');
 
 const BaseConnection = require('./base.js');
 
 const MAGIC = 'VT01';
 
+/**
+ * @typedef CmServer
+ * @property {string} endpoint
+ * @property {string} legacy_endpoint
+ * @property {string} type
+ * @property {string} dc
+ * @property {string} realm
+ * @property {string} load
+ * @property {string} wtd_load
+ */
+
 class TCPConnection extends BaseConnection {
 	/**
 	 * Create a new TCP connection, and connect
 	 * @param {SteamUser} user
+	 * @param {CmServer} chosenServer
 	 * @constructor
 	 */
-	constructor(user) {
+	constructor(user, chosenServer) {
 		super(user);
 
 		this.connectionType = 'TCP';
 		this.sessionKey = null;
 
-		// Pick a CM randomly
-		if (!user._cmList || !user._cmList.tcp_servers) {
-			throw new Error("Nothing to connect to: " + (user._cmList ? "no TCP server list" : "no CM list"));
-		}
-
-		let tcpCm = user._cmList.tcp_servers[Math.floor(Math.random() * user._cmList.tcp_servers.length)];
-		this._debug('Connecting to TCP CM: ' + tcpCm);
-		let cmParts = tcpCm.split(':');
+		this._debug('Connecting to TCP CM: ' + chosenServer.endpoint);
+		let cmParts = chosenServer.endpoint.split(':');
 		let cmHost = cmParts[0];
 		let cmPort = parseInt(cmParts[1], 10);
 
 		if (user.options.httpProxy) {
-			let url = URL.parse(user.options.httpProxy);
-			url.method = 'CONNECT';
-			url.path = tcpCm;
-			url.localAddress = user.options.localAddress;
-			url.localPort = user.options.localPort;
-			if (url.auth) {
-				url.headers = {"Proxy-Authorization": "Basic " + (Buffer.from(url.auth, 'utf8')).toString('base64')};
-				delete url.auth;
+			let url = new URL(user.options.httpProxy);
+			let prox = {
+				protocol: url.protocol,
+				host: url.hostname,
+				port: url.port,
+
+				method: 'CONNECT',
+				path: chosenServer.endpoint,
+				localAddress: user.options.localAddress,
+				localPort: user.options.localPort
+			};
+			if (url.username) {
+				prox.headers = {
+					'Proxy-Authorization': `Basic ${(Buffer.from(`${url.username}:${url.password || ''}`, 'utf8')).toString('base64')}`
+				};
 			}
 
 			let connectionEstablished = false;
-			let req = HTTP.request(url);
+			let req = HTTP.request(prox);
 			req.end();
 			req.setTimeout(user.options.proxyTimeout || 5000);
 			req.on('connect', (res, socket) => {
@@ -66,11 +79,13 @@ class TCPConnection extends BaseConnection {
 
 			req.on('timeout', () => {
 				connectionEstablished = true;
+				this.user._cleanupClosedConnection();
 				this.user.emit('error', new Error('Proxy connection timed out'));
 			});
 
 			req.on('error', (err) => {
 				connectionEstablished = true;
+				this.user._cleanupClosedConnection();
 				this.user.emit('error', err);
 			});
 		} else {
@@ -79,10 +94,10 @@ class TCPConnection extends BaseConnection {
 			this._setupStream();
 
 			socket.connect({
-				"port": cmPort,
-				"host": cmHost,
-				"localAddress": user.options.localAddress,
-				"localPort": user.options.localPort
+				port: cmPort,
+				host: cmHost,
+				localAddress: user.options.localAddress,
+				localPort: user.options.localPort
 			});
 
 			this.stream.setTimeout(this.user._connectTimeout);
